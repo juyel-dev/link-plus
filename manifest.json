@@ -1,11 +1,16 @@
 {
-  "name": "link+",
+  "name": "link+ Secure P2P",
   "short_name": "link+",
-  "start_url": ".",
+  "description": "Serverless Encrypted Communications",
+  "start_url": "/index.html",
   "display": "standalone",
-  "background_color": "#0f0f12",
-  "theme_color": "#00ff9d",
+  "background_color": "#0f172a",
+  "theme_color": "#6366f1",
   "icons": [
-    {"src": "https://via.placeholder.com/192", "sizes": "192x192", "type": "image/png"}
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/3064/3064245.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
   ]
 }
