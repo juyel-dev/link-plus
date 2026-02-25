@@ -3,94 +3,72 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>link+</title>
+    <title>link+ | Advanced Serverless P2P</title>
     <link rel="stylesheet" href="style.css">
     <link rel="manifest" href="manifest.json">
-    <script src="indexeddb.js"></script>
-    <script src="script.js" defer></script>
 </head>
 <body>
-    <div class="app">
-        <!-- HEADER -->
-        <header>
-            <div class="logo">link<span>+</span></div>
-            <div class="room-info">
-                <span id="room-id">ROOM-XXXXXX</span>
-                <button id="copy-link-btn">📋 Copy Link</button>
-            </div>
-            <button id="dark-toggle">🌙</button>
-        </header>
+    <nav>
+        <div class="logo">link<span>+</span></div>
+        <div id="connection-status" class="badge badge-red">Offline</div>
+    </nav>
 
-        <!-- SIDEBAR -->
-        <aside class="sidebar">
-            <h3>Participants (<span id="peer-count">0</span>)</h3>
-            <ul id="peers-list"></ul>
-            <button id="add-peer-btn">+ New Connection</button>
-            <button id="toggle-media-btn">📹 Start Video/Audio</button>
-            <button id="screen-share-btn">🖥️ Screen Share</button>
-        </aside>
-
-        <!-- MAIN -->
-        <main>
-            <div class="tabs">
-                <button class="tab active" data-tab="chat">💬 Chat</button>
-                <button class="tab" data-tab="video">📹 Video</button>
+    <main id="app">
+        <section id="signaling-screen" class="card">
+            <h2>Secure Connection</h2>
+            <p class="text-muted">No servers. Fully end-to-end encrypted.</p>
+            
+            <div class="button-group">
+                <button id="btn-host" class="btn-primary">1. Generate Invite Token</button>
             </div>
 
-            <!-- CHAT TAB -->
-            <div id="chat-tab" class="tab-content active">
-                <div id="messages" class="messages"></div>
-                <div class="input-area">
-                    <input type="text" id="chat-input" placeholder="Type a message... (Enter to send)">
-                    <label class="upload-label" for="file-upload">📎</label>
-                    <input type="file" id="file-upload" accept="image/*" hidden>
-                    <button id="send-btn">Send</button>
-                </div>
+            <div id="host-section" class="hidden mt-20">
+                <label>Send this token to your peer:</label>
+                <textarea id="local-token" readonly onclick="this.select()"></textarea>
+                <button id="copy-token" class="btn-outline">Copy Token</button>
             </div>
 
-            <!-- VIDEO TAB -->
-            <div id="video-tab" class="tab-content">
-                <div id="video-grid" class="video-grid"></div>
+            <div class="divider">AND</div>
+
+            <div class="input-group">
+                <label>2. Paste Peer's Token Here:</label>
+                <textarea id="remote-token" placeholder="Paste the Base64 token here..."></textarea>
+                <button id="btn-connect" class="btn-success">Connect Now</button>
             </div>
-        </main>
-    </div>
+        </section>
 
-    <!-- SIGNALING MODAL -->
-    <div id="signaling-modal" class="modal hidden">
-        <div class="modal-content">
-            <h2>Manual Signaling – <span id="modal-peer-name"></span></h2>
-            <div class="signaling-grid">
-                <div>
-                    <label>Local Offer / Answer</label>
-                    <textarea id="local-sdp" readonly></textarea>
-                    <button id="create-offer-btn">Create Offer</button>
-                    <button id="copy-local-btn">Copy</button>
+        <section id="workspace" class="hidden">
+            <div class="layout-grid">
+                <div class="media-container">
+                    <video id="remote-video" autoplay playsinline></video>
+                    <video id="local-video" autoplay playsinline muted></video>
+                    
+                    <div class="controls-overlay">
+                        <button id="toggle-mic" title="Mute/Unmute">🎙️</button>
+                        <button id="toggle-cam" title="Video On/Off">📷</button>
+                        <button id="toggle-screen" title="Share Screen">🖥️</button>
+                    </div>
                 </div>
-                <div>
-                    <label>Paste Remote SDP</label>
-                    <textarea id="remote-sdp"></textarea>
-                    <button id="set-remote-btn">Set Remote &amp; Create Answer</button>
-                </div>
-                <div>
-                    <label>Local ICE Candidates (copy after gathering)</label>
-                    <textarea id="local-candidates" readonly></textarea>
-                    <button id="copy-candidates-btn">Copy Candidates</button>
-                </div>
-                <div>
-                    <label>Paste Remote ICE Candidates (one per line)</label>
-                    <textarea id="remote-candidates"></textarea>
-                    <button id="add-candidates-btn">Add Candidates</button>
+
+                <div class="chat-container">
+                    <div id="chat-box"></div>
+                    
+                    <div id="file-progress-container" class="hidden">
+                        <span id="file-name" class="text-small">Sending...</span>
+                        <progress id="file-progress" value="0" max="100"></progress>
+                    </div>
+
+                    <div class="input-area">
+                        <label for="file-input" class="file-btn">📎</label>
+                        <input type="file" id="file-input" hidden>
+                        <input type="text" id="chat-input" placeholder="Type a secure message...">
+                        <button id="send-btn">Send</button>
+                    </div>
                 </div>
             </div>
-            <button id="close-modal-btn">Close</button>
-        </div>
-    </div>
+        </section>
+    </main>
 
-    <!-- TOAST -->
-    <div id="toast"></div>
-
-    <script>
-        // Service Worker registration (handled in script.js)
-    </script>
+    <script src="script.js"></script>
 </body>
 </html>
