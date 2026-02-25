@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>link+</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="manifest" href="manifest.json">
+    <script src="indexeddb.js"></script>
+    <script src="script.js" defer></script>
+</head>
+<body>
+    <div class="app">
+        <!-- HEADER -->
+        <header>
+            <div class="logo">link<span>+</span></div>
+            <div class="room-info">
+                <span id="room-id">ROOM-XXXXXX</span>
+                <button id="copy-link-btn">📋 Copy Link</button>
+            </div>
+            <button id="dark-toggle">🌙</button>
+        </header>
+
+        <!-- SIDEBAR -->
+        <aside class="sidebar">
+            <h3>Participants (<span id="peer-count">0</span>)</h3>
+            <ul id="peers-list"></ul>
+            <button id="add-peer-btn">+ New Connection</button>
+            <button id="toggle-media-btn">📹 Start Video/Audio</button>
+            <button id="screen-share-btn">🖥️ Screen Share</button>
+        </aside>
+
+        <!-- MAIN -->
+        <main>
+            <div class="tabs">
+                <button class="tab active" data-tab="chat">💬 Chat</button>
+                <button class="tab" data-tab="video">📹 Video</button>
+            </div>
+
+            <!-- CHAT TAB -->
+            <div id="chat-tab" class="tab-content active">
+                <div id="messages" class="messages"></div>
+                <div class="input-area">
+                    <input type="text" id="chat-input" placeholder="Type a message... (Enter to send)">
+                    <label class="upload-label" for="file-upload">📎</label>
+                    <input type="file" id="file-upload" accept="image/*" hidden>
+                    <button id="send-btn">Send</button>
+                </div>
+            </div>
+
+            <!-- VIDEO TAB -->
+            <div id="video-tab" class="tab-content">
+                <div id="video-grid" class="video-grid"></div>
+            </div>
+        </main>
+    </div>
+
+    <!-- SIGNALING MODAL -->
+    <div id="signaling-modal" class="modal hidden">
+        <div class="modal-content">
+            <h2>Manual Signaling – <span id="modal-peer-name"></span></h2>
+            <div class="signaling-grid">
+                <div>
+                    <label>Local Offer / Answer</label>
+                    <textarea id="local-sdp" readonly></textarea>
+                    <button id="create-offer-btn">Create Offer</button>
+                    <button id="copy-local-btn">Copy</button>
+                </div>
+                <div>
+                    <label>Paste Remote SDP</label>
+                    <textarea id="remote-sdp"></textarea>
+                    <button id="set-remote-btn">Set Remote &amp; Create Answer</button>
+                </div>
+                <div>
+                    <label>Local ICE Candidates (copy after gathering)</label>
+                    <textarea id="local-candidates" readonly></textarea>
+                    <button id="copy-candidates-btn">Copy Candidates</button>
+                </div>
+                <div>
+                    <label>Paste Remote ICE Candidates (one per line)</label>
+                    <textarea id="remote-candidates"></textarea>
+                    <button id="add-candidates-btn">Add Candidates</button>
+                </div>
+            </div>
+            <button id="close-modal-btn">Close</button>
+        </div>
+    </div>
+
+    <!-- TOAST -->
+    <div id="toast"></div>
+
+    <script>
+        // Service Worker registration (handled in script.js)
+    </script>
+</body>
+</html>
