@@ -3,72 +3,78 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>link+ | Advanced Serverless P2P</title>
+    <title>Link+ | Privacy-First P2P</title>
     <link rel="stylesheet" href="style.css">
-    <link rel="manifest" href="manifest.json">
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
 </head>
-<body>
-    <nav>
-        <div class="logo">link<span>+</span></div>
-        <div id="connection-status" class="badge badge-red">Offline</div>
-    </nav>
-
-    <main id="app">
-        <section id="signaling-screen" class="card">
-            <h2>Secure Connection</h2>
-            <p class="text-muted">No servers. Fully end-to-end encrypted.</p>
-            
-            <div class="button-group">
-                <button id="btn-host" class="btn-primary">1. Generate Invite Token</button>
-            </div>
-
-            <div id="host-section" class="hidden mt-20">
-                <label>Send this token to your peer:</label>
-                <textarea id="local-token" readonly onclick="this.select()"></textarea>
-                <button id="copy-token" class="btn-outline">Copy Token</button>
-            </div>
-
-            <div class="divider">AND</div>
-
-            <div class="input-group">
-                <label>2. Paste Peer's Token Here:</label>
-                <textarea id="remote-token" placeholder="Paste the Base64 token here..."></textarea>
-                <button id="btn-connect" class="btn-success">Connect Now</button>
+<body class="dark-theme">
+    <div id="app">
+        <section id="setup-screen" class="glass">
+            <h1>Link<span>+</span></h1>
+            <p>Serverless. Encrypted. Peer-to-Peer.</p>
+            <input type="text" id="username-input" placeholder="Enter Nickname...">
+            <div class="actions">
+                <button id="create-room-btn" class="primary">Create New Room</button>
+                <button id="join-room-btn">Join via Code</button>
             </div>
         </section>
 
-        <section id="workspace" class="hidden">
-            <div class="layout-grid">
-                <div class="media-container">
-                    <video id="remote-video" autoplay playsinline></video>
-                    <video id="local-video" autoplay playsinline muted></video>
-                    
-                    <div class="controls-overlay">
-                        <button id="toggle-mic" title="Mute/Unmute">🎙️</button>
-                        <button id="toggle-cam" title="Video On/Off">📷</button>
-                        <button id="toggle-screen" title="Share Screen">🖥️</button>
+        <section id="main-interface" class="hidden">
+            <aside id="sidebar" class="glass">
+                <div class="user-info">
+                    <div id="local-avatar" class="avatar"></div>
+                    <span id="display-name"></span>
+                </div>
+                <div id="participant-list"></div>
+                <div class="room-controls">
+                    <button id="share-link-btn">Copy Link</button>
+                    <button id="show-qr-btn">Show QR</button>
+                </div>
+            </aside>
+
+            <main id="chat-area">
+                <header class="glass">
+                    <h2 id="room-id-display">Room: ----</h2>
+                    <div class="call-actions">
+                        <button id="toggle-video">📷</button>
+                        <button id="toggle-audio">🎤</button>
+                        <button id="share-screen">📺</button>
                     </div>
+                </header>
+
+                <div id="video-grid"></div>
+
+                <div id="message-container">
+                    <div id="messages"></div>
+                    <div id="typing-indicator" class="hidden">Someone is typing...</div>
                 </div>
 
-                <div class="chat-container">
-                    <div id="chat-box"></div>
-                    
-                    <div id="file-progress-container" class="hidden">
-                        <span id="file-name" class="text-small">Sending...</span>
-                        <progress id="file-progress" value="0" max="100"></progress>
-                    </div>
-
-                    <div class="input-area">
-                        <label for="file-input" class="file-btn">📎</label>
-                        <input type="file" id="file-input" hidden>
-                        <input type="text" id="chat-input" placeholder="Type a secure message...">
-                        <button id="send-btn">Send</button>
-                    </div>
-                </div>
-            </div>
+                <footer class="glass">
+                    <label for="file-input" class="file-label">📎</label>
+                    <input type="file" id="file-input" hidden>
+                    <input type="text" id="msg-input" placeholder="Type a message...">
+                    <button id="send-btn">Send</button>
+                </footer>
+            </main>
         </section>
-    </main>
+    </div>
 
+    <div id="modal-overlay" class="hidden">
+        <div class="modal glass">
+            <h3 id="modal-title">Signaling</h3>
+            <div id="qr-container"></div>
+            <textarea id="sdp-transfer" placeholder="Paste SDP data here..."></textarea>
+            <div class="modal-buttons">
+                <button id="close-modal">Close</button>
+                <button id="process-sdp" class="primary">Connect</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="indexeddb.js"></script>
+    <script src="qr.js"></script>
+    <script src="worker.js"></script>
     <script src="script.js"></script>
 </body>
 </html>
