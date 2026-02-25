@@ -1,273 +1,201 @@
-// =============== CONFIG & GLOBALS ===============
-const CONFIG = {
-    STUN: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' }
-    ],
-    CHUNK_SIZE: 64 * 1024,   // 64KB
-    MAX_IMAGE_SIZE: 15 * 1024 * 1024
+const config = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+let peerConn, dataChannel, localStream;
+let isHost = false;
+
+// UI Elements
+const ui = {
+    setup: document.getElementById('signaling-screen'),
+    workspace: document.getElementById('workspace'),
+    localToken: document.getElementById('local-token'),
+    remoteToken: document.getElementById('remote-token'),
+    chatBox: document.getElementById('chat-box'),
+    status: document.getElementById('connection-status')
 };
 
-let roomId = '';
-let myUsername = localStorage.getItem('username') || `User${Math.floor(Math.random()*9999)}`;
-let localStream = null;
-let peers = new Map(); // peerId => {pc, dc, name, videoEl, candidates:[] }
-let currentSignalingPeerId = null;
-let worker = new Worker('worker.js');
-let db = null;
-
-// =============== INDEXEDDB ===============
-async function initDB() {
-    db = await window.openLinkDB(); // from indexeddb.js
+// --- 1. MEDIA SETUP (Camera & Screen Share) ---
+async function setupMedia() {
+    try {
+        localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        document.getElementById('local-video').srcObject = localStream;
+        localStream.getTracks().forEach(track => peerConn.addTrack(track, localStream));
+    } catch (e) {
+        console.warn("Camera access denied or unavailable.");
+    }
 }
 
-// =============== ROOM & DEEP LINK ===============
-function generateRoomId() {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    const arr = new Uint8Array(10);
-    crypto.getRandomValues(arr);
-    return Array.from(arr, b => chars[b % chars.length]).join('');
-}
+document.getElementById('toggle-screen').onclick = async () => {
+    try {
+        const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+        const screenTrack = screenStream.getVideoTracks()[0];
+        const sender = peerConn.getSenders().find(s => s.track.kind === 'video');
+        sender.replaceTrack(screenTrack);
+        
+        document.getElementById('local-video').srcObject = screenStream;
 
-function initRoom() {
-    const hash = location.hash.slice(1);
-    const params = new URLSearchParams(hash);
-    roomId = params.get('room') || generateRoomId();
-    location.hash = `room=${roomId}`;
-    document.getElementById('room-id').textContent = roomId;
-    document.title = `link+ – ${roomId}`;
-}
+        // Revert to camera when screen sharing stops
+        screenTrack.onended = async () => {
+            sender.replaceTrack(localStream.getVideoTracks()[0]);
+            document.getElementById('local-video').srcObject = localStream;
+        };
+    } catch (e) { console.error("Screen share failed", e); }
+};
 
-// =============== PEER CONNECTION FACTORY ===============
-function createPeerConnection(peerId, isInitiator = false) {
-    const pc = new RTCPeerConnection({ iceServers: CONFIG.STUN });
+// --- 2. ADVANCED SIGNALING (Base64 Tokens) ---
+document.getElementById('btn-host').onclick = async () => {
+    isHost = true;
+    document.getElementById('host-section').classList.remove('hidden');
+    initWebRTC();
+};
 
-    pc.onicecandidate = e => {
-        if (e.candidate) {
-            const p = peers.get(peerId);
-            if (p) p.candidates.push(e.candidate);
-            updateLocalCandidatesUI();
+document.getElementById('btn-connect').onclick = async () => {
+    if (!peerConn) initWebRTC();
+    
+    try {
+        const token = ui.remoteToken.value.trim();
+        const sdpStr = atob(token); // Decode Base64
+        const desc = new RTCSessionDescription(JSON.parse(sdpStr));
+        await peerConn.setRemoteDescription(desc);
+
+        if (!isHost) {
+            const answer = await peerConn.createAnswer();
+            await peerConn.setLocalDescription(answer);
+        }
+        ui.setup.classList.add('hidden');
+        ui.workspace.classList.remove('hidden');
+    } catch (e) {
+        alert("Invalid Token! Make sure you copied the whole string.");
+    }
+};
+
+async function initWebRTC() {
+    peerConn = new RTCPeerConnection(config);
+    await setupMedia();
+
+    // Data Channel (Text + Files)
+    if (isHost) {
+        dataChannel = peerConn.createDataChannel("secure-data");
+        setupDataChannel();
+    } else {
+        peerConn.ondatachannel = (e) => {
+            dataChannel = e.channel;
+            setupDataChannel();
+        };
+    }
+
+    // Media Receiving
+    peerConn.ontrack = (e) => {
+        document.getElementById('remote-video').srcObject = e.streams[0];
+    };
+
+    // Advanced ICE Gathering (Wait for all candidates before generating token)
+    peerConn.onicecandidate = (e) => {
+        if (e.candidate === null) {
+            // ICE gathering complete, generate single Base64 token
+            const sdpJson = JSON.stringify(peerConn.localDescription);
+            const base64Token = btoa(sdpJson); 
+            ui.localToken.value = base64Token;
         }
     };
 
-    pc.onicegatheringstatechange = () => {
-        if (pc.iceGatheringState === 'complete') updateLocalCandidatesUI();
-    };
-
-    pc.ondatachannel = e => {
-        const dc = e.channel;
-        setupDataChannel(peerId, dc);
-    };
-
-    pc.ontrack = e => {
-        const p = peers.get(peerId);
-        if (p && p.videoEl) p.videoEl.srcObject = e.streams[0];
-    };
-
-    const dc = pc.createDataChannel('linkplus', { ordered: true, reliable: true });
-    setupDataChannel(peerId, dc);
-
-    peers.set(peerId, { pc, dc, name: peerId, candidates: [], videoEl: null });
-
-    if (isInitiator) {
-        pc.createOffer()
-            .then(offer => pc.setLocalDescription(offer))
-            .then(() => showSignalingModal(peerId));
+    if (isHost) {
+        const offer = await peerConn.createOffer();
+        await peerConn.setLocalDescription(offer);
     }
-
-    updatePeersList();
-    return pc;
 }
 
-function setupDataChannel(peerId, dc) {
-    dc.onopen = () => {
-        console.log(`DC open with ${peerId}`);
-        dc.send(JSON.stringify({ type: 'hello', username: myUsername }));
-        updateDeliveryStatus(peerId, 'connected');
+// --- 3. SECURE MESSAGING & FILE CHUNKING ---
+function setupDataChannel() {
+    dataChannel.binaryType = "arraybuffer";
+    dataChannel.onopen = () => {
+        ui.status.innerText = "Secure Connection Active";
+        ui.status.className = "badge badge-green";
     };
 
-    dc.onmessage = async e => {
-        const data = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
-        handleIncomingData(peerId, data);
-    };
+    let incomingFileInfo = null;
+    let incomingFileData = [];
+    let bytesReceived = 0;
 
-    dc.onclose = () => cleanupPeer(peerId);
-}
-
-// =============== INCOMING DATA HANDLER ===============
-async function handleIncomingData(peerId, payload) {
-    if (payload.type === 'hello') {
-        const p = peers.get(peerId);
-        if (p) p.name = payload.username;
-        updatePeersList();
-        return;
-    }
-
-    if (payload.type === 'text') {
-        addMessage(payload.text, 'received', peerId);
-        // send delivery ack
-        const dc = peers.get(peerId)?.dc;
-        if (dc) dc.send(JSON.stringify({ type: 'delivered', id: payload.id }));
-    }
-
-    if (payload.type === 'file-meta') {
-        // start receiving chunks
-        window.currentFile = { id: payload.id, name: payload.name, size: payload.size, chunks: [], received: 0 };
-    }
-
-    if (payload.type === 'file-chunk') {
-        if (!window.currentFile) return;
-        window.currentFile.chunks[payload.index] = payload.data;
-        window.currentFile.received += payload.data.byteLength;
-        // progress UI ...
-        if (window.currentFile.received >= window.currentFile.size) {
-            const blob = new Blob(window.currentFile.chunks);
-            showImagePreview(blob, window.currentFile.name);
-            window.currentFile = null;
+    dataChannel.onmessage = (e) => {
+        if (typeof e.data === 'string') {
+            const msg = JSON.parse(e.data);
+            if (msg.type === 'text') {
+                appendChat('Peer', msg.content, 'msg-peer');
+            } else if (msg.type === 'file-meta') {
+                incomingFileInfo = msg.meta;
+                incomingFileData = [];
+                bytesReceived = 0;
+            } else if (msg.type === 'file-done') {
+                const blob = new Blob(incomingFileData);
+                const url = URL.createObjectURL(blob);
+                appendChat('Peer', `<a href="${url}" download="${incomingFileInfo.name}" style="color:white; text-decoration:underline;">📥 Download ${incomingFileInfo.name}</a>`, 'msg-peer');
+                incomingFileInfo = null;
+            }
+        } else {
+            // Receiving ArrayBuffer File Chunk
+            incomingFileData.push(e.data);
+            bytesReceived += e.data.byteLength;
         }
-    }
-
-    if (payload.type === 'typing') {
-        showTypingIndicator(peerId);
-    }
-}
-
-// =============== FILE CHUNK SEND (via worker) ===============
-async function sendFile(file, targetPeerIds = null) {
-    const targets = targetPeerIds || Array.from(peers.keys());
-    const compressed = await compressImageViaWorker(file); // returns Blob
-
-    const arrayBuffer = await compressed.arrayBuffer();
-    const totalChunks = Math.ceil(arrayBuffer.byteLength / CONFIG.CHUNK_SIZE);
-
-    const meta = {
-        type: 'file-meta',
-        id: Date.now().toString(36),
-        name: file.name,
-        size: arrayBuffer.byteLength,
-        chunks: totalChunks
     };
-
-    targets.forEach(id => {
-        const dc = peers.get(id)?.dc;
-        if (dc && dc.readyState === 'open') dc.send(JSON.stringify(meta));
-    });
-
-    for (let i = 0; i < totalChunks; i++) {
-        const start = i * CONFIG.CHUNK_SIZE;
-        const chunk = arrayBuffer.slice(start, start + CONFIG.CHUNK_SIZE);
-        const payload = { type: 'file-chunk', index: i, data: chunk };
-        targets.forEach(id => {
-            const dc = peers.get(id)?.dc;
-            if (dc) dc.send(payload); // ArrayBuffer is sent directly
-        });
-    }
 }
 
-// Worker communication
-function compressImageViaWorker(file) {
-    return new Promise(resolve => {
-        worker.onmessage = e => resolve(e.data.blob);
-        worker.postMessage({ type: 'compress', file });
-    });
-}
-
-// =============== VIDEO / AUDIO ===============
-async function startMedia() {
-    localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-    const localVideo = document.createElement('video');
-    localVideo.srcObject = localStream;
-    localVideo.muted = true;
-    localVideo.autoplay = true;
-    localVideo.playsInline = true;
-    document.getElementById('video-grid').appendChild(localVideo);
-
-    // add to all existing peers
-    for (const [id, p] of peers) {
-        localStream.getTracks().forEach(track => p.pc.addTrack(track, localStream));
-    }
-}
-
-// =============== SIGNALING UI ===============
-function showSignalingModal(peerId) {
-    currentSignalingPeerId = peerId;
-    document.getElementById('modal-peer-name').textContent = peers.get(peerId).name || peerId;
-    document.getElementById('signaling-modal').classList.remove('hidden');
-    updateLocalSDPUI();
-}
-
-function updateLocalSDPUI() {
-    const p = peers.get(currentSignalingPeerId);
-    if (!p) return;
-    document.getElementById('local-sdp').value = JSON.stringify(p.pc.localDescription);
-    document.getElementById('local-candidates').value = p.candidates.map(c => JSON.stringify(c)).join('\n');
-}
-
-// Event listeners (added in init())
-document.getElementById('create-offer-btn').onclick = async () => {
-    const p = peers.get(currentSignalingPeerId);
-    const offer = await p.pc.createOffer();
-    await p.pc.setLocalDescription(offer);
-    updateLocalSDPUI();
+// Send Text Message
+document.getElementById('send-btn').onclick = () => {
+    const input = document.getElementById('chat-input');
+    if (!input.value.trim()) return;
+    
+    dataChannel.send(JSON.stringify({ type: 'text', content: input.value }));
+    appendChat('Me', input.value, 'msg-me');
+    input.value = '';
 };
 
-// set remote + answer logic, add candidates, etc. (full implementation follows same pattern)
+// Send File (Chunking Logic)
+document.getElementById('file-input').onchange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
 
-// =============== CHAT UI ===============
-function addMessage(text, direction, from) {
+    const CHUNK_SIZE = 16384; // 16KB max for WebRTC stability
+    const progressEl = document.getElementById('file-progress');
+    document.getElementById('file-progress-container').classList.remove('hidden');
+    document.getElementById('file-name').innerText = `Sending: ${file.name}`;
+
+    // Send Metadata
+    dataChannel.send(JSON.stringify({ type: 'file-meta', meta: { name: file.name, size: file.size } }));
+
+    // Read and chunk file
+    const arrayBuffer = await file.arrayBuffer();
+    let offset = 0;
+
+    const sendChunk = () => {
+        while (offset < arrayBuffer.byteLength) {
+            if (dataChannel.bufferedAmount > 65535) {
+                // Buffer full, pause and wait
+                setTimeout(sendChunk, 50);
+                return;
+            }
+            const chunk = arrayBuffer.slice(offset, offset + CHUNK_SIZE);
+            dataChannel.send(chunk);
+            offset += CHUNK_SIZE;
+            progressEl.value = (offset / file.size) * 100;
+        }
+        
+        // Done
+        dataChannel.send(JSON.stringify({ type: 'file-done' }));
+        document.getElementById('file-progress-container').classList.add('hidden');
+        appendChat('Me', `📎 Sent file: ${file.name}`, 'msg-me');
+    };
+    sendChunk();
+};
+
+function appendChat(user, htmlContent, className) {
     const div = document.createElement('div');
-    div.className = `message ${direction}`;
-    div.innerHTML = `<strong>${from}:</strong> ${text}`;
-    document.getElementById('messages').appendChild(div);
-    div.scrollIntoView({ behavior: 'smooth' });
+    div.className = `msg ${className}`;
+    div.innerHTML = `<strong>${user}:</strong><br>${htmlContent}`;
+    ui.chatBox.appendChild(div);
+    ui.chatBox.scrollTop = ui.chatBox.scrollHeight;
 }
 
-// =============== INIT ===============
-async function init() {
-    await initDB();
-    initRoom();
-    registerServiceWorker();
-
-    // dark mode from localStorage
-    if (localStorage.getItem('dark') === 'false') document.documentElement.style.setProperty('--bg', '#f8f9fa');
-
-    document.getElementById('add-peer-btn').onclick = () => {
-        const name = prompt('Peer label (e.g. Alice):', 'Peer' + (peers.size + 1));
-        if (!name) return;
-        createPeerConnection(name, true); // initiator
-    };
-
-    document.getElementById('copy-link-btn').onclick = () => {
-        navigator.clipboard.writeText(location.href);
-        showToast('Deep link copied!');
-    };
-
-    // file upload
-    document.getElementById('file-upload').onchange = e => {
-        if (e.target.files[0]) sendFile(e.target.files[0]);
-    };
-
-    // keyboard send
-    document.getElementById('chat-input').addEventListener('keypress', e => {
-        if (e.key === 'Enter') sendTextMessage();
-    });
-
-    // all other listeners attached similarly...
-    showToast('link+ ready – share the room link and exchange SDP manually');
-}
-
-function registerServiceWorker() {
-    if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('sw.js').then(() => console.log('SW registered'));
-    }
-}
-
-function showToast(msg) {
-    const t = document.getElementById('toast');
-    t.textContent = msg;
-    t.style.opacity = 1;
-    setTimeout(() => t.style.opacity = 0, 2800);
-}
-
-// Start everything
-window.onload = init;
+// UI Helpers
+document.getElementById('copy-token').onclick = () => {
+    navigator.clipboard.writeText(ui.localToken.value);
+    alert("Token copied! Send it securely to your peer.");
+};
